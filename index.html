@@ -177,7 +177,8 @@
         width 1.05s var(--ease-spring),
         height 1.05s var(--ease-spring),
         min-height 1.05s var(--ease-spring),
-        box-shadow 0.5s ease;
+        box-shadow 0.5s ease,
+        transform 1.05s var(--ease-spring);
       box-shadow:
         0 8px 24px rgba(0, 0, 0, 0.35),
         0 0 0 1px rgba(255, 255, 255, 0.15),
@@ -327,7 +328,7 @@
   <script>
     (function () {
       /** 每个爱心小窗依次出现的间隔（毫秒），数值越大越慢 */
-      var POPUP_DELAY_MS = 150;
+      var POPUP_DELAY_MS = 100;
 
       var WIN_COLORS = [
         "#fff59d", "#ffcc80", "#a5d6a7", "#ef9a9a", "#90caf9",
@@ -457,47 +458,102 @@
         return pts;
       }
 
+      function shuffleArray(arr) {
+        var a = arr.slice();
+        for (var i = a.length - 1; i > 0; i--) {
+          var j = Math.floor(Math.random() * (i + 1));
+          var tmp = a[i];
+          a[i] = a[j];
+          a[j] = tmp;
+        }
+        return a;
+      }
+
       var spawnTimer = null;
 
-      /** 爱心结束后：把所有小弹窗动画移动到铺满可视区域的网格 */
+      /**
+       * 爱心结束后：把所有小弹窗随机铺满可视区域。
+       * 这里不再按行列顺序摆放，而是先生成若干可用随机格子，再打乱分配。
+       */
       function spreadWinsToFullScreen() {
         var sw = window.innerWidth;
         var sh = window.innerHeight;
         var desk = sw >= 1024;
         var pad = desk ? 4 : 6;
         var bottomReserve = desk ? 30 : 54;
-        var wins = miniLayer.querySelectorAll(".fake-win");
+        var wins = Array.prototype.slice.call(miniLayer.querySelectorAll(".fake-win"));
         var m = wins.length;
         if (m === 0) return;
 
         var usableW = sw - 2 * pad;
         var usableH = sh - pad - bottomReserve;
-        var cols = Math.round(Math.sqrt(m * (usableW / usableH)));
-        cols = Math.max(4, Math.min(m, cols));
-        var rows = Math.ceil(m / cols);
-        var gap = 2;
-        var cellW = usableW / cols;
-        var cellH = usableH / rows;
-        var tw = Math.max(64, Math.floor(cellW - gap));
-        var th = Math.max(50, Math.floor(cellH - gap));
 
-        var idx;
-        for (idx = 0; idx < m; idx++) {
-          wins[idx].classList.add("is-spread");
+        // 生成比窗口数量略多的随机候选位置，保证“铺满感”同时避免明显行列感
+        var baseCell = desk ? 126 : 112;
+        var cols = Math.max(2, Math.floor(usableW / baseCell));
+        var rows = Math.max(2, Math.ceil(m / cols));
+
+        // 为了更随机，候选格子数略多于窗口数
+        var extraCols = Math.max(1, Math.ceil(cols * 0.35));
+        var extraRows = Math.max(1, Math.ceil(rows * 0.35));
+        var gridCols = cols + extraCols;
+        var gridRows = rows + extraRows;
+
+        var cellW = usableW / gridCols;
+        var cellH = usableH / gridRows;
+
+        var targets = [];
+        for (var r = 0; r < gridRows; r++) {
+          for (var c = 0; c < gridCols; c++) {
+            var tw = Math.max(64, Math.floor(cellW * (0.82 + Math.random() * 0.18)));
+            var th = Math.max(50, Math.floor(cellH * (0.82 + Math.random() * 0.18)));
+
+            var maxLeft = Math.max(pad, sw - pad - tw);
+            var maxTop = Math.max(pad, sh - bottomReserve - th);
+
+            var centerX = pad + c * cellW + cellW / 2;
+            var centerY = pad + r * cellH + cellH / 2;
+
+            // 在格子中心附近加随机偏移，让视觉更自然
+            var jitterX = (Math.random() - 0.5) * cellW * 0.55;
+            var jitterY = (Math.random() - 0.5) * cellH * 0.55;
+
+            var left = Math.round(centerX - tw / 2 + jitterX);
+            var top = Math.round(centerY - th / 2 + jitterY);
+
+            left = Math.max(pad, Math.min(maxLeft, left));
+            top = Math.max(pad, Math.min(maxTop, top));
+
+            targets.push({
+              left: left,
+              top: top,
+              width: tw,
+              height: th,
+              delay: Math.floor(Math.random() * 240),
+            });
+          }
         }
+
+        targets = shuffleArray(targets);
+
+        // 随机取足够多的位置分配给每个窗口
+        for (var i = 0; i < m; i++) {
+          wins[i].classList.add("is-spread");
+        }
+
         void miniLayer.offsetWidth;
-        for (idx = 0; idx < m; idx++) {
+
+        for (var idx = 0; idx < m; idx++) {
           var el = wins[idx];
-          var r = Math.floor(idx / cols);
-          var c = idx % cols;
-          var left = Math.round(pad + c * cellW + (cellW - tw) / 2);
-          var top = Math.round(pad + r * cellH + (cellH - th) / 2);
-          el.style.transitionDelay = idx * 10 + "ms";
-          el.style.width = tw + "px";
-          el.style.height = th + "px";
-          el.style.minHeight = th + "px";
-          el.style.left = left + "px";
-          el.style.top = top + "px";
+          var t = targets[idx % targets.length];
+
+          el.style.transitionDelay = t.delay + "ms";
+          el.style.width = t.width + "px";
+          el.style.height = t.height + "px";
+          el.style.minHeight = t.height + "px";
+          el.style.left = t.left + "px";
+          el.style.top = t.top + "px";
+          el.style.zIndex = String(10 + Math.floor(Math.random() * 50));
         }
       }
 
